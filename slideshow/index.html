@@ -459,7 +459,6 @@
 	}
 
 	window.onload = () => {
-		if (AddWidgetToMeld()) return;
 		const isMeld = window.location.search.includes("address=");
 		if (!isMeld) {
 			// document.body.innerHTML = `<div class="noImagesFound" style="color: red;">Please open this widget inside <b>MeldStudio</b> to access local files.</div>`;
@@ -468,6 +467,7 @@
 		} else {
 			connectSocket();
 		}
+		if (AddWidgetToMeld()) return;
 	};
 	</script>
 </body>
