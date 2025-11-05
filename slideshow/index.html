@@ -5,14 +5,14 @@
 <!-- Copyright (c) 2025 @PHPkiller				 -->
 <!-- Licensed under the MIT license.			 -->
 <!------------------------------------------------->
-<!-- Version: 0.1.18 							 -->
+<!-- Version: 0.1.19 							 -->
 <!------------------------------------------------->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Slideshow Widget v0.1.18</title>
+<title>Slideshow Widget v0.1.19</title>
 <style>
 	:root {
 		--border-color: #FFF;
@@ -464,6 +464,7 @@
 		if (!isMeld) {
 			// document.body.innerHTML = `<div class="noImagesFound" style="color: red;">Please open this widget inside <b>MeldStudio</b> to access local files.</div>`;
 			container.innerHTML = `<div class="noImagesFound" style="color: red;">Please open this widget inside <b>MeldStudio</b> to access local files.</div>`;
+			console.warn("[Slideshow] Please open this widget inside MeldStudio to access local files.");
 		} else {
 			connectSocket();
 		}
