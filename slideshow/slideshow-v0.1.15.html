@@ -1,0 +1,467 @@
+<!------------------------------------------------->
+<!-- MeldStudio Slideshow Widget				 -->
+<!-- Author: PHPkiller							 -->
+<!------------------------------------------------->
+<!-- Copyright (c) 2025 @PHPkiller				 -->
+<!-- Licensed under the MIT license.			 -->
+<!------------------------------------------------->
+<!-- Version: 0.1.15 							 -->
+<!------------------------------------------------->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slideshow Widget v0.1.10</title>
+<style>
+	:root {
+		--border-color: #FFF;
+		--border-size: 3px;
+		--border-radius: 15px;
+		--shadow-distance: 10px;
+		--shadow-spread: 30px;
+		--shadow-opacity: 30;
+		--shadow: 0 var(--shadow-distance) var(--shadow-spread) rgba(0, 0, 0, calc(var(--shadow-opacity) / 100));
+		--transition-speed: 0.8s;
+	}
+	html, body {
+		margin: 0;
+		padding: 0;
+		height: 100%;
+		width: 100%;
+		background: transparent;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
+		font-family: 'Arial', sans-serif;
+	}
+	.cards {
+		position: relative;
+		width: 800px;
+		height: 800px;
+		perspective: 1000px;
+	}
+	.card {
+		position: absolute;
+		top: 0; left: 0;
+		width: 100%;
+		height: 100%;
+		border: var(--border-size) solid var(--border-color);
+		border-radius: var(--border-radius);
+		overflow: hidden;
+		transform-origin: center;
+		transform: rotate(var(--angle, 0deg)) scale(0.95);
+		opacity: 0;
+		transition: all var(--transition-speed) ease-in-out;
+		box-shadow: var(--shadow);
+		box-sizing: border-box;
+	}
+	.card.active {
+		opacity: 1;
+		transform: rotate(0deg) scale(1);
+		z-index: 10;
+	}
+	.card img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+	.caption {
+		position: absolute;
+		bottom: 0;
+		width: 100%;
+		background: linear-gradient(to top, rgba(0,0,0, 0.6), transparent);
+		color: #fff;
+		padding: 10px;
+		text-align: center;
+		font-size: 40px;
+		text-shadow: 0 0 5px #000000;
+	}
+	.cards, .card, .card img {
+		transform-origin: center center;
+	}
+	.noImagesFound{
+		color: #FFF;
+		font-size: 2em;
+		text-shadow: 0 0 5px #000;
+		text-align: center;
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+	}
+</style>
+</head>
+<body>
+	<div id="slideshowContainer" class="cards">
+		<div class='noImagesFound'>No images found.</div>
+	</div>
+
+	<script src="https://widgets.meldstudio.co/v1/qwebchannel-v1.js"></script>
+	<script>
+	const kSchema = {
+		schemaVersion: 1,
+		name: "Slideshow",
+		author: "PHPkiller [phpkiller.me]",
+		properties: [
+			{ name: "imageFolder", type: "string", defaultValue: "file:///C:/slideshow/" },
+			{ name: "shuffleInterval", type: "int", defaultValue: 3000 },
+			{ name: "transitionSpeed", type: "int", defaultValue: 800 },
+			{ name: "showCaption", type: "bool", defaultValue: false },
+			{ name: "borderColor", type: "color", defaultValue: "#FFFFFF" },
+			{ name: "borderSize", type: "int", defaultValue: 5 },
+			{ name: "borderRadius", type: "int", defaultValue: 30 },
+			{ name: "shadowDistance", type: "real", defaultValue: 10 },
+			{ name: "shadowSpread", type: "real", defaultValue: 30 },
+			{ name: "shadowOpacity", type: "real", defaultValue: 30 },
+		],
+		signals: [
+			{ name: "reloadImages" },
+			{ name: "nextImage" },
+		],
+		controls: [
+			{ controlType: "Button", label: "Reload Images", triggerSignalOnClick: "reloadImages", toolTip: "Reload images." },
+			{ controlType: "Button", label: "Next Image", triggerSignalOnClick: "nextImage", toolTip: "Next image." },
+			{ controlType: "Separator" },
+			{ controlType: "TextField", label: "Image Folder", property: "imageFolder" },
+			{ controlType: "Separator" },
+			{ controlType: "SpinBox", label: "Shuffle Interval (ms)", property: "shuffleInterval", from: 1000, to: 600000 },
+			{ controlType: "SpinBox", label: "Transition Speed (ms)", property: "transitionSpeed", from: 100, to: 5000 },
+			{ controlType: "Switch", label: "Show Image Captions", property: "showCaption" },
+			{ controlType: "ColorTextField", label: "Border Color", property: "borderColor" },
+			{ controlType: "SpinBox", label: "Border Size (px)", property: "borderSize", from: 0, to: 30 },
+			{ controlType: "SpinBox", label: "Border Radius (px)", property: "borderRadius", from: 0, to: 100 },
+			{ controlType: "SpinBox", label: "Shadow Distance (px)", property: "shadowDistance", from: 0, to: 100 },
+			{ controlType: "SpinBox", label: "Shadow Spread (px)", property: "shadowSpread", from: 0, to: 100 },
+			{ controlType: "SpinBox", label: "Shadow Opacity (%)", property: "shadowOpacity", from: 0, to: 100 },
+		]
+	};
+
+	const Widget = {
+		id: "SlideshowWidget-" + Math.floor(Math.random() * 999999),
+		socket: null,
+		channel: null,
+		controller: null,
+		cards: [],
+		currentIndex: 0,
+		intervalHandle: null,
+		cachedPropertyValues: {}
+	};
+
+	const container = document.getElementById('slideshowContainer');
+
+	async function loadImagesFromFolder(folder) {
+		console.log("[Slideshow] Loading images from:", folder);
+		if (!folder) return [];
+		folder = folder.trim();
+		if (folder.startsWith("file:///")) folder = folder.replace("file:///", "");
+		folder = folder.replace(/\\/g, "/");
+		if (!folder.endsWith("/")) folder += "/";
+		const knownExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+		const imgs = [];
+		for (let i = 1; i <= 50; i++) {
+			for (const ext of knownExtensions) {
+				const file = `file:///${folder}${i}${ext}`;
+				const img = new Image();
+				const loaded = await new Promise((resolve) => {
+					img.onload = () => resolve(true);
+					img.onerror = () => resolve(false);
+					img.src = file;
+				});
+				if (loaded) {
+					console.log(`[Slideshow] Found: ${file}`);
+					imgs.push(file);
+					break;
+				}
+			}
+		}
+		if (imgs.length === 0) console.warn("[Slideshow] No images found in folder:", folder);
+		return imgs;
+	}
+
+	function renderCards(images) {
+		container.innerHTML = "";
+		const showCaption = Widget.cachedPropertyValues.showCaption ?? true;
+		images.forEach((img, idx) => {
+			const card = document.createElement("div");
+			card.className = "card" + (idx === 0 ? " active" : "");
+			card.style.setProperty("--angle", `${(Math.random() - 0.5) * 10}deg`);
+			const image = document.createElement("img");
+			image.src = img;
+			card.appendChild(image);
+			if (showCaption) {
+				let filename = img.split("/").pop();
+				try { filename = decodeURIComponent(filename); } catch {}
+				filename = filename.replace(/\.[^/.]+$/, "");
+				const caption = document.createElement("div");
+				caption.className = "caption";
+				caption.textContent = filename;
+				card.appendChild(caption);
+			}
+			container.appendChild(card);
+		});
+		Widget.cards = Array.from(container.querySelectorAll(".card"));
+		Widget.currentIndex = 0;
+	}
+
+	function showNextCard() {
+		if (!Widget.cards.length) return;
+		Widget.cards[Widget.currentIndex].classList.remove("active");
+		Widget.currentIndex = (Widget.currentIndex + 1) % Widget.cards.length;
+		Widget.cards[Widget.currentIndex].classList.add("active");
+	}
+
+	function startAutoShuffle(intervalMs) {
+		clearInterval(Widget.intervalHandle);
+		Widget.intervalHandle = setInterval(showNextCard, intervalMs);
+	}
+
+	function reloadAll() {
+		console.log("[Slideshow] Reloading widget...");
+		setupWidget(Widget.cachedPropertyValues);
+	}
+
+	function applyStyles(state) {
+		// Always pull from latest cache if state is missing
+		const p = state || Widget.cachedPropertyValues;
+		// Defensive defaults (prevents null overwrites)
+		if (!p) return;
+		// Update all live style variables
+		const shadow = `0 ${p.shadowDistance}px ${p.shadowSpread}px rgba(0,0,0, ${p.shadowOpacity / 100})`;
+		document.documentElement.style.setProperty('--border-color', p.borderColor);
+		document.documentElement.style.setProperty('--border-size', p.borderSize + 'px');
+		document.documentElement.style.setProperty('--border-radius', p.borderRadius + 'px');
+		document.documentElement.style.setProperty('--transition-speed', p.transitionSpeed + 'ms');
+		document.documentElement.style.setProperty('--shadow', shadow);
+		// caption toggle
+		const showCaption = p.showCaption ?? true;
+		document.querySelectorAll('.caption').forEach(el => {
+			el.style.display = showCaption ? 'block' : 'none';
+		});
+		// Force repaint (fixes Chrome sometimes not reapplying CSS vars)
+		document.body.offsetHeight;
+	}
+
+	async function setupWidget(state = {}) {
+		applyStyles(state);
+		const folder = state.imageFolder || "F:/Streaming/Stream files/slideshow";
+		const interval = state.shuffleInterval || 3000;
+		console.log("[Slideshow] Setup using folder:", folder);
+		const imgs = await loadImagesFromFolder(folder);
+		console.log("[Slideshow] Loaded", imgs.length, "images");
+		if (!imgs.length) {
+			const container = document.getElementById("photoAlbum");
+			container.innerHTML = "<div class='noImagesFound'>No images found.</div>";
+			return;
+		}
+		renderCards(imgs);
+		startAutoShuffle(interval);
+	}
+
+	function handleSignal(name) {
+		switch (name) {
+			// case "reloadImages": setupWidget(Widget.cachedPropertyValues); break;
+			case "reloadImages": reloadAll(); break;
+			case "nextImage": showNextCard(); break;
+			default: console.log("[Slideshow] Unhandled signal:", name);
+		}
+	}
+
+	function eventReceived(evt) {
+		const { signal } = evt || {};
+		if (signal) handleSignal(signal);
+	}
+
+	function widgetControllerInit(controller) {
+		Widget.controller = controller;
+		controller.connectedClientId = Widget.id;
+		controller.connectedClientIdChanged = (() => {
+			const socket = Widget.socket;
+			const newConnectedClientId = Widget.controller.connectedClientId;
+			if (socket && Widget.id !== newConnectedClientId) {
+				console.log(`[Slideshow] Closing widget client (${Widget.id}) socket, another client connected (${newConnectedClientId})`);
+				Widget.socket.close(1000, "Another client connected.");
+			}
+		});
+
+		controller.schema = kSchema;
+		controller.eventReceived.connect(eventReceived);
+		controller.stateChanged.connect(() => {
+			console.log(`[Slideshow] client (${Widget.id}) stateChanged: ${controller.state} hasSetupState: ${Widget.hasSetupState}`);
+			if (!controller.state || Widget.hasSetupState) return;
+            for (let propertyData of kSchema.properties) {
+                setupProperty(propertyData);
+            }
+			setupWidget(controller.state);
+			controller.state.nextImage.connect(() => handleSignal("nextImage"));
+			controller.state.reloadImages.connect(() => handleSignal("reloadImages"));
+			Widget.hasSetupState = true;
+		});
+
+		controller.resetProperty.connect((propertyName) => {
+			if (!Widget.hasSetupState) return;
+			for (let property of kSchema.properties) {
+				if (property.name === propertyName) {
+					controller.state[property.name] = property.defaultValue;
+					return;
+				}
+			}
+			console.warn(`[Slideshow] Unable to reset property "${propertyName}"`);
+		});
+
+		controller.resetAllProperties.connect(() => {
+			if (!Widget.hasSetupState) return;
+			for (let property of kSchema.properties) {
+				controller.state[property.name] = property.defaultValue;
+			}
+		});
+
+		function setupProperty(propertyData) {
+			const state = Widget.controller?.state;
+			if (!state) return;
+			const url = new URL(window.location);
+			const hashSearchParams = new URLSearchParams(url.hash.substring(1));
+			let defaultValue = propertyData.defaultValue;
+			if (hashSearchParams.has(propertyData.name)) {
+				defaultValue = decodeURIComponent(hashSearchParams.get(propertyData.name));
+				switch (propertyData.type) {
+					case "int":
+						defaultValue = parseInt(defaultValue);
+						break;
+					case "real":
+						defaultValue = parseFloat(defaultValue);
+						break;
+					case "bool":
+						defaultValue = defaultValue.toLowerCase() === "true";
+						break;
+					case "string":
+					case "color":
+						break;
+					default:
+						console.warn("[Slideshow] Unsupported parameter type:", propertyData.type);
+						return;
+				}
+			}
+			Widget.cachedPropertyValues[propertyData.name] = defaultValue;
+			state[propertyData.name] = defaultValue;
+			try {
+				state[propertyData.name + "Changed"].connect(() => handlePropertyUpdate(propertyData));
+			} catch (e) {
+				console.warn(`[Slideshow] Unable to connect to ${propertyData.name} change signal. id: ${Widget.id}`);
+			}
+		}
+
+		function handlePropertyUpdate(propertyData) {
+			const state = controller?.state;
+			if (!state) return;
+			const oldUrlStr = window.location.href;
+			let newUrl = new URL(window.location);
+			let hashSearchParams = new URLSearchParams(newUrl.hash.substring(1));
+			// read new value from controller.state
+			let newPropertyValue = state[propertyData.name];
+			let defaultValue = propertyData.defaultValue;
+			// normalize color casing
+			if (propertyData.type === "color" && typeof newPropertyValue === "string") {
+				newPropertyValue = newPropertyValue.toLowerCase();
+				defaultValue = defaultValue.toLowerCase();
+			}
+			// decode if the controller gives encoded value
+			if (typeof newPropertyValue === "string") {
+				try { newPropertyValue = decodeURIComponent(newPropertyValue); } catch (e) { /* ignore */ }
+			}
+			// update cached property first
+			Widget.cachedPropertyValues[propertyData.name] = newPropertyValue;
+			// imageFolder changed -> reload images directly
+			if (propertyData.name === "imageFolder") {
+				const newFolder = newPropertyValue;
+				console.log("[Slideshow] imageFolder changed -> reloading from:", newFolder);
+				// load images and render them; start shuffle with cached interval (fallback to schema default)
+				loadImagesFromFolder(newFolder).then((imgs) => {
+					if (!imgs || imgs.length === 0) {
+						console.warn("[Slideshow] No images found after folder change:", newFolder);
+						container.innerHTML = "<div class='noImagesFound'>No images found.</div>";
+						Widget.cards = [];
+						return;
+					}
+					renderCards(imgs);
+					// use cached shuffleInterval if present, otherwise fallback to schema default
+					const interval = parseInt(Widget.cachedPropertyValues.shuffleInterval ?? kSchema.properties.find(p => p.name === "shuffleInterval").defaultValue, 10);
+					startAutoShuffle(isNaN(interval) ? 3000 : interval);
+					// apply styles in case folder change included other properties (defensive)
+					applyStyles(Widget.cachedPropertyValues);
+				}).catch((err) => {
+					console.error("[Slideshow] Error reloading images:", err);
+					container.innerHTML =
+						"<div class='noImagesFound'>No images found.</div>";
+				});
+			}
+    		// update URL hash / persistence (same behavior as before)
+			if (newPropertyValue === defaultValue) {
+				hashSearchParams.delete(propertyData.name);
+			} else {
+				hashSearchParams.set(propertyData.name, encodeURIComponent(newPropertyValue));
+			}
+			const hashString = hashSearchParams.toString();
+			if (hashString.length) {
+				newUrl.hash = "#" + hashString;
+			} else {
+				newUrl.hash = "";
+			}
+			const newUrlStr = newUrl.toString();
+			if (newUrlStr !== oldUrlStr) {
+				window.history.pushState({}, "", newUrlStr);
+				// send back to Meld (do not block)
+				try { controller.updateUrl(newUrlStr, false); } catch (e) { /* ignore if not supported */ }
+			}
+			// apply other styles
+			applyStyles(Widget.cachedPropertyValues);
+		}
+	}
+
+	function connectSocket() {
+		const params = new URLSearchParams(window.location.search);
+		const address = params.get("address") ?? "127.0.0.1";
+		const port = params.get("port") ?? "55255";
+		const widgetId = params.get("widget_id") ?? Widget.id;
+		const socket = new WebSocket(`ws://${address}:${port}`);
+		Widget.socket = socket;
+
+		socket.onopen = function () {
+			Widget.channel = new QWebChannel(socket, function (channel) {
+				const obj = channel.objects[widgetId] || channel.objects[Object.keys(channel.objects)[0]];
+				if (obj) widgetControllerInit(obj);
+			});
+		};
+		socket.onclose = function () {
+			setTimeout(connectSocket, 1000);
+		};
+	}
+
+	function AddWidgetToMeld() {
+		const params = new URLSearchParams(window.location.search);
+		if (!params.has("address")) {
+			const widgetDict = {
+				width: 800,
+				height: 800,
+				widgetSource: window.location.href,
+				meta: {
+					pluginName: "MeldStudio",
+					pluginPath: "qrc:/Meld/SceneEditor/Plugins/MeldStudio/plugin_MeldStudio.qml",
+					sceneObjectSourceName: "MeldStudio/Widget"
+				},
+			};
+			const pasteDict = { app: "meld", action: "paste-selection", data: [widgetDict] };
+			window.location.assign(`meld://action/paste?mime-type=${encodeURIComponent("application/json")}&data=${encodeURIComponent(JSON.stringify(pasteDict))}`);
+			return true;
+		}
+		return false;
+	}
+
+	window.onload = () => {
+		if (AddWidgetToMeld()) return;
+		connectSocket();
+	};
+	</script>
+</body>
+</html>
