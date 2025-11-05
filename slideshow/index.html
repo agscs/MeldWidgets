@@ -5,14 +5,14 @@
 <!-- Copyright (c) 2025 @PHPkiller				 -->
 <!-- Licensed under the MIT license.			 -->
 <!------------------------------------------------->
-<!-- Version: 0.1.17 							 -->
+<!-- Version: 0.1.18 							 -->
 <!------------------------------------------------->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Slideshow Widget v0.1.17</title>
+<title>Slideshow Widget v0.1.18</title>
 <style>
 	:root {
 		--border-color: #FFF;
@@ -460,10 +460,10 @@
 
 	window.onload = () => {
 		if (AddWidgetToMeld()) return;
-		// connectSocket();
 		const isMeld = window.location.search.includes("address=");
 		if (!isMeld) {
-			document.body.innerHTML = `<div class="noImagesFound" style="color: red;">Please open this widget inside <b>MeldStudio</b> to access local files.</div>`;
+			// document.body.innerHTML = `<div class="noImagesFound" style="color: red;">Please open this widget inside <b>MeldStudio</b> to access local files.</div>`;
+			container.innerHTML = `<div class="noImagesFound" style="color: red;">Please open this widget inside <b>MeldStudio</b> to access local files.</div>`;
 		} else {
 			connectSocket();
 		}
@@ -471,4 +471,3 @@
 	</script>
 </body>
 </html>
-
