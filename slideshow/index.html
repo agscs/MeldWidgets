@@ -5,7 +5,7 @@
 <!-- Copyright (c) 2025 @PHPkiller				 -->
 <!-- Licensed under the MIT license.			 -->
 <!------------------------------------------------->
-<!-- Version: 0.1.15 							 -->
+<!-- Version: 0.1.17 							 -->
 <!------------------------------------------------->
 <!DOCTYPE html>
 <html lang="en">
@@ -442,8 +442,8 @@
 		const params = new URLSearchParams(window.location.search);
 		if (!params.has("address")) {
 			const widgetDict = {
-				width: 800,
-				height: 800,
+				width: 1000,
+				height: 1000,
 				widgetSource: window.location.href,
 				meta: {
 					pluginName: "MeldStudio",
@@ -460,7 +460,13 @@
 
 	window.onload = () => {
 		if (AddWidgetToMeld()) return;
-		connectSocket();
+		// connectSocket();
+		const isMeld = window.location.search.includes("address=");
+		if (!isMeld) {
+			document.body.innerHTML = `<div class="noImagesFound" style="color: red;">Please open this widget inside <b>MeldStudio</b> to access local files.</div>`;
+		} else {
+			connectSocket();
+		}
 	};
 	</script>
 </body>
