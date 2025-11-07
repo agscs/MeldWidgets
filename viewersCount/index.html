@@ -1,0 +1,560 @@
+<!------------------------------------------------->
+<!-- LiveViewers Widget							 -->
+<!------------------------------------------------->
+<!-- Author: PHPkiller							 -->
+<!------------------------------------------------->
+<!-- Copyright (c) 2025 @PHPkiller				 -->
+<!-- Licensed under the MIT license.			 -->
+<!------------------------------------------------->
+<!-- Version 0.1.25								 -->
+<!------------------------------------------------->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>LiveViewers Widget v0.1.25</title>
+	<style>
+		:root {
+			--font-color: #ffffff;
+			--font-size: 32px;
+			--font-weight: 600;
+			--font-family: "Arial", sans-serif;
+			--icon-size: 32px;
+		}
+		html, body {
+			margin: 0;
+			padding: 0;
+			height: 100%;
+			width: 100%;
+			background: transparent;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-family: var(--font-family);
+			color: var(--font-color);
+			font-size: var(--font-size);
+			font-weight: var(--font-weight);
+		}
+		#viewerWrap {
+			text-align: center;
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+			gap: 6px;
+		}
+		#viewerCount {
+			/* text-shadow: 0 0 8px rgba(0,0,0,0.6); */
+			line-height: 1;
+			transition: all 0.25s ease;
+			transition: transform 0.25s ease;
+		}
+		#viewerCount.pulse {
+			animation: pulse 0.3s ease-in-out;
+		}
+		.icon {
+			width: var(--icon-size);
+			height: var(--icon-size);
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			color: var(--font-color);
+			opacity: 0.95;
+		}
+		.icon svg {
+			width: 100%;
+			height: 100%;
+			fill: currentColor;
+			stroke: none;
+		}
+		.small-note {
+			font-size: 0.6em;
+			opacity: 0.75;
+		}
+		@keyframes pulse {
+			0% { transform: scale(1); }
+			50% { transform: scale(1.1); }
+			100% { transform: scale(1); }
+		}
+	</style>
+	<script src="https://widgets.meldstudio.co/v1/qwebchannel-v1.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/countup.js/2.8.2/countUp.umd.js"></script>
+</head>
+<body>
+	<div id="viewerWrap">
+		<div id="platformIcon" class="icon" aria-hidden="true"></div>
+		<div id="viewerCount">?</div>
+	</div>
+	<script>
+		/* Schema & widget basics */
+		const kSchema = {
+			schemaVersion: 1,
+			name: "LiveViewers (v0.1.25)",
+			author: "PHPkiller [phpkiller.me]",
+			properties: [
+				{ name: "platform", type: "string", defaultValue: "twitch" },
+				{ name: "username", type: "string", defaultValue: "xqc" },
+				{ name: "youtubeApiKey", type: "string", defaultValue: "" },
+				{ name: "refreshRate", type: "int", defaultValue: 30 },
+				{ name: "fontFamily", type: "string", defaultValue: "Arial" },
+				{ name: "fontColor", type: "color", defaultValue: "#FFFFFF" },
+				{ name: "fontSize", type: "int", defaultValue: 32 },
+				{ name: "fontWeight", type: "string", defaultValue: "600" },
+				{ name: "iconSize", type: "int", defaultValue: 32 }
+			],
+			controls: [
+				{ controlType: "Label", text: "Platform Settings:" },
+				{ controlType: "ComboBox", label: "Platform", property: "platform", items: ["twitch", "kick", "youtube"], tooltip: "The platform to fetch the viewer count from." },
+				{ controlType: "TextField", label: "Username / Channel ID", property: "username", tooltip: "The username or channel ID of the platform." },
+				{ controlType: "TextField", label: "YouTube API Key (Only if using YouTube)", property: "youtubeApiKey", tooltip: "Required for YouTube live viewer count." },
+				{ controlType: "Separator" },
+				{ controlType: "Label", text: "Text Settings:" },
+				{ controlType: "FontPicker", label: "Font Family", property: "fontFamily", tooltip: "Set the font family of the text." },
+				{ controlType: "ColorTextField", label: "Font Color", property: "fontColor", tooltip: "The color of the text." },
+				{ controlType: "SpinBox", label: "Font Size", property: "fontSize", from: 8, to: 100, tooltip: "The size of the text." },
+				{ controlType: "ComboBox", label: "Font Weight", property: "fontWeight", items: ["300","400","500","600","700","800","900"], tooltip: "The weight of the text." },
+				{ controlType: "SpinBox", label: "Icon Size (px)", property: "iconSize", from: 8, to: 100, tooltip: "The size of the icon." },
+				{ controlType: "Separator" },
+				{ controlType: "Label", text: "Viewers Refresh Settings:" },
+				{ controlType: "SpinBox", label: "Refresh Rate (sec)", property: "refreshRate", from: 5, to: 300, tooltip: "Refresh number of viewers every X seconds." },
+			]
+		};
+
+		const Widget = {
+			id: "LiveViewersWidget-" + Math.floor(Math.random() * 999999),
+			socket: null,
+			channel: null,
+			controller: null,
+			cachedPropertyValues: {},
+			refreshRate: null,
+			refreshTimer: null,
+			iconCache: {}
+		};
+
+		const viewerWrapEl = document.getElementById('viewerWrap');
+		const viewerCountEl = document.getElementById('viewerCount');
+		const platformIconEl = document.getElementById('platformIcon');
+		const platformIcons = {
+			twitch: `<svg xml:space="preserve" viewBox="0 0 2400 2800"><path fill="#fff" d="m2200 1300-400 400h-400l-350 350v-350H600V200h1600z"/><g fill="#9146ff"><path d="M500 0 0 500v1800h600v500l500-500h400l900-900V0H500zm1700 1300-400 400h-400l-350 350v-350H600V200h1600v1100z"/><path d="M1700 550h200v600h-200zm-550 0h200v600h-200z"/></g></svg>`,
+			youtube: `<svg preserveAspectRatio="xMidYMid" viewBox="0 0 256 180"><path fill="red" d="M250.346 28.075A32.18 32.18 0 0 0 227.69 5.418C207.824 0 127.87 0 127.87 0S47.912.164 28.046 5.582A32.18 32.18 0 0 0 5.39 28.24c-6.009 35.298-8.34 89.084.165 122.97a32.18 32.18 0 0 0 22.656 22.657c19.866 5.418 99.822 5.418 99.822 5.418s79.955 0 99.82-5.418a32.18 32.18 0 0 0 22.657-22.657c6.338-35.348 8.291-89.1-.164-123.134Z"/><path fill="#FFF" d="m102.421 128.06 66.328-38.418-66.328-38.418z"/></svg>`,
+			kick: `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" fill-rule="evenodd" clip-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2"><path d="M37 .036h164.448v113.621h54.71v-56.82h54.731V.036h164.448v170.777h-54.73v56.82h-54.711v56.8h54.71v56.82h54.73V512.03H310.89v-56.82h-54.73v-56.8h-54.711v113.62H37V.036z" fill="#53fc18"/></svg>`
+		};
+
+		/* -------- API fetchers (public endpoints) -------- */
+		async function fetchViewers(platform, username) {
+			switch (platform) {
+				case "twitch": return await getTwitch(username);
+				case "kick": return await getKick(username);
+				case "youtube": return await getYouTube(username);
+				default: return 0;
+			}
+		}
+
+		async function getTwitch(user) {
+			try {
+				const res = await fetch(`https://decapi.me/twitch/viewercount/${encodeURIComponent(user)}`);
+				const text = await res.text();
+				return text.includes("offline") ? 0 : parseInt(text) || 0;
+			} catch (e) { return 0; }
+		}
+
+		async function getKick(user) {
+			try {
+				const res = await fetch(`https://kick.com/api/v2/channels/${encodeURIComponent(user)}`);
+				const data = await res.json();
+				// Kick field variance: some endpoints use livestream.viewer_count or livestream.viewers
+				return data?.livestream?.viewer_count ?? data?.livestream?.viewers ?? 0;
+			} catch (e) { return 0; }
+		}
+
+		async function getYouTube(channelId) {
+			const apiKey = Widget.cachedPropertyValues.youtubeApiKey;
+			if (!apiKey || !channelId) return 0;
+			// ─── SWITCH MODE ───────────────────────────────────────────────
+			// "A" → first live only (default)
+			// "B" → pick a specific index (manual)
+			// "C" → aggregate all concurrent viewers across all live streams
+			const mode = "A"; // change to "B" or "C" to switch logic
+			const indexToPick = 0; // used only for mode "B"
+			// ──────────────────────────────────────────────────────────────
+			try {
+				// Step 1: find currently live videos for the given channel
+				const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=id&channelId=${encodeURIComponent(channelId)}&eventType=live&type=video&key=${encodeURIComponent(apiKey)}`;
+				const searchRes = await fetch(searchUrl);
+				const searchData = await searchRes.json();
+				if (!searchData.items || !searchData.items.length) {
+					console.warn("[YouTube] No live streams currently running.");
+					return 0;
+				}
+				// Handle mode logic
+				switch (mode) {
+					// Option A: Use first live video only
+					case "A": {
+						const liveVideoId = searchData.items[0].id.videoId;
+						if (!liveVideoId) return 0;
+						const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${liveVideoId}&key=${encodeURIComponent(apiKey)}`;
+						const statsRes = await fetch(statsUrl);
+						const statsData = await statsRes.json();
+						const viewers = parseInt(statsData?.items?.[0]?.liveStreamingDetails?.concurrentViewers ?? "0", 10);
+						return viewers || 0;
+					}
+					// Option B: Use a specific live stream index
+					case "B": {
+						const videoId = searchData.items[indexToPick]?.id?.videoId;
+						if (!videoId) {
+							console.warn(`[YouTube] No live video at index ${indexToPick}.`);
+							return 0;
+						}
+						const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${videoId}&key=${encodeURIComponent(apiKey)}`;
+						const statsRes = await fetch(statsUrl);
+						const statsData = await statsRes.json();
+						const viewers = parseInt(statsData?.items?.[0]?.liveStreamingDetails?.concurrentViewers ?? "0", 10);
+						return viewers || 0;
+					}
+					// Option C: Aggregate all concurrent viewers
+					case "C": {
+						let total = 0;
+						// Collect all video IDs
+						const ids = searchData.items
+							.map(item => item.id?.videoId)
+							.filter(Boolean);
+						if (!ids.length) return 0;
+						// Batch requests in chunks of 50 (YouTube API limit)
+						for (let i = 0; i < ids.length; i += 50) {
+							const batch = ids.slice(i, i + 50).join(",");
+							const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${batch}&key=${encodeURIComponent(apiKey)}`;
+							const statsRes = await fetch(statsUrl);
+							const statsData = await statsRes.json();
+							for (const item of statsData.items || []) {
+								const v = parseInt(item?.liveStreamingDetails?.concurrentViewers ?? "0", 10);
+								if (!isNaN(v)) total += v;
+							}
+						}
+						console.log(`[YouTube] Aggregated total viewers across ${searchData.items.length} live streams: ${total}`);
+						return total;
+					}
+					default:
+						console.warn(`[YouTube] Invalid mode "${mode}". Defaulting to first live.`);
+						return 0;
+				}
+			} catch (err) {
+				console.error("[YouTube] API error:", err);
+				return 0;
+			}
+		}
+
+		/* Insert or update icon element — inline SVG using original colors */
+		function renderIcon(svgText, iconSizePx, color) {
+			platformIconEl.innerHTML = ''; // clear
+			platformIconEl.style.setProperty('--icon-size', iconSizePx + 'px');
+			if (!svgText) {
+				const note = document.createElement('div');
+				note.className = 'small-note';
+				note.textContent = Widget.cachedPropertyValues.platform?.toUpperCase() ?? '';
+				platformIconEl.appendChild(note);
+				return;
+			}
+			let safeSvg = svgText.replace(/<svg([^>]+)>/i, `<svg$1 role="img" aria-hidden="true">`);
+			const wrapper = document.createElement('div');
+			wrapper.innerHTML = safeSvg;
+			const svgEl = wrapper.querySelector('svg');
+			if (svgEl) {
+				svgEl.setAttribute('width', iconSizePx);
+				svgEl.setAttribute('height', iconSizePx);
+				svgEl.style.display = 'block';
+				platformIconEl.appendChild(svgEl);
+				return;
+			}
+			// fallback if parse fails
+			platformIconEl.innerHTML = safeSvg;
+		}
+
+		/* -------- Display logic & update hooks -------- */
+		const CountUp = window.countUp.CountUp;
+		let countUp = null;
+
+		async function updateViewers() {
+			const { platform = 'twitch', username = '' } = Widget.cachedPropertyValues;
+			const count = await fetchViewers(platform, username);
+			const newValue = parseInt(count) || 0;
+			// Initialize CountUp once
+			if (!countUp) {
+				countUp = new CountUp(viewerCountEl, newValue, {
+					startVal: 0,
+					duration: 0.8,
+					useEasing: true,
+					useGrouping: true,
+					separator: ','
+				});
+				if (!countUp.error) countUp.start();
+				currentValue = newValue;
+				return;
+			}
+			// Animate only if value changed
+			if (newValue !== currentValue) {
+				countUp.update(newValue);
+				currentValue = newValue;
+				viewerCountEl.classList.add('pulse');
+				setTimeout(() => viewerCountEl.classList.remove('pulse'), 300);
+			}
+		}
+
+
+
+		/* Apply font and icon sizing styles */
+		function applyStyles(state) {
+			if (!state) return;
+			document.documentElement.style.setProperty('--font-color', state.fontColor);
+			document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
+			document.documentElement.style.setProperty('--font-weight', state.fontWeight);
+			document.documentElement.style.setProperty('--font-family', state.fontFamily);
+			const iconSize = (state.iconSize !== undefined) ? state.iconSize : 32;
+			document.documentElement.style.setProperty('--icon-size', iconSize + 'px');
+			// Also update icon color/size on the DOM node
+			platformIconEl.style.color = state.fontColor;
+			platformIconEl.style.width = iconSize + 'px';
+			platformIconEl.style.height = iconSize + 'px';
+		}
+
+		/* Called when platform changes so we also load the icon */
+		async function updateIconForPlatform(platform) {
+			const p = platform ?? Widget.cachedPropertyValues.platform;
+			const iconSize = Widget.cachedPropertyValues.iconSize ?? 32;
+			const color = Widget.cachedPropertyValues.fontColor ?? getComputedStyle(document.documentElement).getPropertyValue('--font-color');
+
+			const svg = platformIcons[p] ?? null;
+			renderIcon(svg, iconSize, color);
+		}
+
+		/* -------- Initialization & URL sync -------- */
+		function setupWidget(state = {}) {
+			applyStyles(state);
+			updateViewers();
+			updateIconForPlatform(state.platform);
+			if (Widget.refreshTimer) clearInterval(Widget.refreshTimer);
+			Widget.refreshRate = state.refreshRate ?? 30;
+			Widget.refreshTimer = setInterval(updateViewers, Widget.refreshRate * 1000);
+		}
+
+		/* Called on property changes from Meld */
+		function handlePropertyUpdate(propertyData) {
+			const state = Widget.controller?.state;
+			if (!state) return;
+			// read new value from controller.state
+			let newPropertyValue = state[propertyData.name];
+			let defaultValue = propertyData.defaultValue;
+			// normalize color casing
+			if (propertyData.type === "color" && typeof newPropertyValue === "string") {
+				newPropertyValue = newPropertyValue.toLowerCase();
+				defaultValue = defaultValue.toLowerCase();
+			}
+			// decode if the controller gives encoded value
+			if (typeof newPropertyValue === "string") {
+				try { newPropertyValue = decodeURIComponent(newPropertyValue); } catch (e) { /* ignore */ }
+			}
+			Widget.cachedPropertyValues[propertyData.name] = newPropertyValue;
+			// visual updates
+			if (["fontColor","fontSize","fontWeight","fontFamily","iconSize"].includes(propertyData.name)) {
+				applyStyles(Widget.cachedPropertyValues);
+				updateIconForPlatform(Widget.cachedPropertyValues.platform);
+			}
+			// update icon and viewer fetch immediately
+			if (["platform"].includes(propertyData.name)) {
+				updateIconForPlatform(newPropertyValue);
+				updateViewers();
+			}
+			if (["username"].includes(propertyData.name)) {
+				updateViewers();
+			}
+			// update refresh interval
+			if (["refreshRate"].includes(propertyData.name)) {
+				if (Widget.refreshTimer) clearInterval(Widget.refreshTimer);
+				Widget.refreshRate = Widget.cachedPropertyValues.refreshRate ?? 30;
+				Widget.refreshTimer = setInterval(updateViewers, Widget.refreshRate * 1000);
+				console.log(`[LiveViewers] Refresh interval set to ${Widget.refreshRate}s`);
+			}
+			// === URL persistence ===
+			try {
+				const url = new URL(window.location.href);
+				const params = url.searchParams;
+				const hashParams = new URLSearchParams(window.location.hash.slice(1));
+				// Rebuild params for all non-default values
+				for (const prop of kSchema.properties) {
+					const val = Widget.cachedPropertyValues[prop.name];
+					const def = prop.defaultValue;
+					if (val === def || val === undefined || val === null || val === "") {
+						params.delete(prop.name);
+						hashParams.delete(prop.name);
+					} else {
+						params.set(prop.name, String(val));
+						hashParams.set(prop.name, String(val));
+					}
+				}
+				url.search = params.toString();
+				const newUrlStr = url.toString();
+				const newHash = "#" + hashParams.toString();
+				let updated = false;
+				try {
+					window.history.replaceState({}, "", newUrlStr);
+					updated = true;
+				} catch (e) {
+					console.warn("[LiveViewers] replaceState blocked:", e);
+				}
+				// If sandbox prevents replaceState, fallback to updating hash
+				if (!updated) {
+					window.location.hash = newHash;
+				}
+				// Notify Meld Studio to keep control
+				try {
+					if (controller && typeof controller.updateUrl === "function") {
+						controller.updateUrl(updated ? newUrlStr : newHash, false);
+					}
+				} catch (e) {
+					console.warn("[LiveViewers] controller.updateUrl failed:", e);
+				}
+				console.log("[LiveViewers] URL updated:", updated ? newUrlStr : newHash);
+			} catch (err) {
+				console.error("[LiveViewers] Failed to persist URL:", err);
+			}
+		}
+
+		/* -------- Meld Controller Binding -------- */
+		function widgetControllerInit(controller) {
+			Widget.controller = controller;
+			controller.connectedClientId = Widget.id;
+			controller.schema = kSchema;
+			controller.stateChanged.connect(() => {
+				if (!controller.state) return;
+				for (let property of kSchema.properties) setupProperty(property);
+				setupWidget(controller.state);
+				Widget.hasSetupState = true;
+			});
+			controller.resetProperty.connect((propertyName) => {
+				if (!Widget.hasSetupState) return;
+				for (let property of kSchema.properties) {
+					if (property.name === propertyName) {
+						controller.state[property.name] = property.defaultValue;
+						// sync URL
+						handlePropertyUpdate(property);
+						return;
+					}
+				}
+				console.warn(`[Slideshow] Unable to reset property "${propertyName}"`);
+			});
+			controller.resetAllProperties.connect(() => {
+				if (!Widget.hasSetupState) return;
+				for (let property of kSchema.properties) {
+					controller.state[property.name] = property.defaultValue;
+				}
+				// After all resets, update URL cleanup once
+				for (let property of kSchema.properties) handlePropertyUpdate(property);
+			});
+		}
+
+		function setupProperty(propertyData) {
+			const state = Widget.controller?.state;
+			if (!state) return;
+			// Combine both query params and hash params
+			const queryParams = new URLSearchParams(window.location.search);
+			const hashParams = new URLSearchParams(window.location.hash.substring(1));
+			// Priority: hash > query > default
+			let value = hashParams.get(propertyData.name)
+				?? queryParams.get(propertyData.name)
+				?? propertyData.defaultValue;
+			// Decode and normalize
+			try { value = decodeURIComponent(value); } catch {}
+			switch (propertyData.type) {
+				case "int":
+					value = parseInt(value, 10);
+					if (isNaN(value)) value = propertyData.defaultValue;
+					break;
+				case "real":
+					value = parseFloat(value);
+					if (isNaN(value)) value = propertyData.defaultValue;
+					break;
+				case "bool":
+					value = (String(value).toLowerCase() === "true");
+					break;
+				case "color":
+					value = String(value).toLowerCase();
+					break;
+				case "string":
+				default:
+					value = String(value);
+					break;
+			}
+			// Cache and apply
+			Widget.cachedPropertyValues[propertyData.name] = value;
+			state[propertyData.name] = value;
+			// Bind live updates from Meld
+			try {
+				state[propertyData.name + "Changed"].connect(() => handlePropertyUpdate(propertyData));
+			} catch (e) {
+				console.warn(`[LiveViewers] Failed binding property ${propertyData.name}`, e);
+			}
+		}
+
+		/* -------- Socket connection & add-to-Meld helper -------- */
+		function connectSocket() {
+			const params = new URLSearchParams(window.location.search);
+			const address = params.get("address") ?? "127.0.0.1";
+			const port = params.get("port") ?? "55255";
+			const widgetId = params.get("widget_id") ?? Widget.id;
+			const socket = new WebSocket(`ws://${address}:${port}`);
+			Widget.socket = socket;
+			socket.onopen = function () {
+				Widget.channel = new QWebChannel(socket, function (channel) {
+					const obj = channel.objects[widgetId] || channel.objects[Object.keys(channel.objects)[0]];
+					if (obj) widgetControllerInit(obj);
+				});
+			};
+			socket.onclose = () => {
+				console.warn("[LiveViewers] Lost connection. Retrying...");
+				setTimeout(connectSocket, 1000);
+			};
+		}
+
+		function openInMeldStudio() {
+			const params = new URLSearchParams(window.location.search);
+			if (!params.has("address")) {
+				const widgetDict = {
+					width: 400,
+					height: 200,
+					widgetSource: window.location.href,
+					meta: {
+						pluginName: "MeldStudio",
+						pluginPath: "qrc:/Meld/SceneEditor/Plugins/MeldStudio/plugin_MeldStudio.qml",
+						sceneObjectSourceName: "MeldStudio/Widget"
+					}
+				};
+				const pasteDict = { app: "meld", action: "paste-selection", data: [widgetDict] };
+				window.location.assign(`meld://action/paste?mime-type=${encodeURIComponent("application/json")}&data=${encodeURIComponent(JSON.stringify(pasteDict))}`);
+				return true;
+			}
+			return false;
+		}
+
+		/* -------- Boot -------- */
+		window.onload = () => {
+			const isMeld = window.location.search.includes("address=");
+			if (!isMeld) {
+				viewerWrapEl.innerHTML = `<span style="color:red;">Open in <b>MeldStudio</b></span>`;
+				console.warn("[LiveViewers] Please open inside MeldStudio.");
+			} else {
+				const params = new URLSearchParams(window.location.search);
+				const platform = params.get("platform") || "twitch";
+				// Initialize cached values early
+				Widget.cachedPropertyValues.platform = platform;
+				Widget.cachedPropertyValues.iconSize = 32;
+				Widget.cachedPropertyValues.fontColor = "#ffffff";
+				// Render default icon immediately
+				updateIconForPlatform(platform);
+				// Connect socket
+				connectSocket();
+			}
+			// Add to Meld alert
+			if (openInMeldStudio()) return;
+		};
+	</script>
+</body>
+</html>
