@@ -6,7 +6,7 @@
 <!-- Copyright (c) 2025 @PHPkiller				 -->
 <!-- Licensed under the MIT license.			 -->
 <!------------------------------------------------->
-<!-- Version 0.1.41								 -->
+<!-- Version 0.1.42								 -->
 <!------------------------------------------------->
 <!DOCTYPE html>
 <html lang="en">
@@ -14,14 +14,14 @@
 <head>
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>LiveViewers Widget v0.1.41</title>
+	<title>LiveViewers Widget v0.1.42</title>
 	<style>
 		:root {
 			--font-color: #9146ff;
-			--font-size: 32px;
+			--font-size: 50px;
 			--font-weight: 600;
 			--font-family: "Arial", sans-serif;
-			--icon-size: 32px;
+			--icon-size: 50px;
 		}
 
 		html,
@@ -108,7 +108,7 @@
 		/* Schema & widget basics */
 		const kSchema = {
 			schemaVersion: 1,
-			name: "LiveViewers (v0.1.41)",
+			name: "LiveViewers (v0.1.42)",
 			author: "PHPkiller [phpkiller.me]",
 			properties: [
 				{ name: "platform", type: "string", defaultValue: "twitch" },
@@ -121,7 +121,12 @@
 				{ name: "fontWeight", type: "string", defaultValue: "600" },
 				{ name: "iconSize", type: "int", defaultValue: 50 }
 			],
+			signals: [
+				{ name: "refreshCount" }
+			],
 			controls: [
+				{ controlType: "Button", label: "Refresh Viewers Count", triggerSignalOnClick: "refreshCount", toolTip: "Fetch the latest viewer count immediately." },
+				{ controlType: "Separator" },
 				{ controlType: "Label", text: "Platform Settings:" },
 				{ controlType: "ComboBox", label: "Platform", property: "platform", items: ["twitch", "kick", "youtube"], tooltip: "The platform to fetch the viewer count from." },
 				{ controlType: "TextField", label: "Username / Channel ID", property: "username", tooltip: "The username or channel ID of the platform." },
@@ -186,10 +191,52 @@
 			} catch (e) { return 0; }
 		}
 
-		async function getYouTube(channelId) {
-			const apiKey = Widget.cachedPropertyValues.youtubeApiKey;
-			if (!apiKey || !channelId) return 0;
+		const youtubeChannelCache = {};
+
+		async function resolveYouTubeChannelId(input, apiKey) {
+			if (!input || !apiKey) return "";
+			input = String(input).trim();
+			// Standard 24-char UC channel ID
+			if (/^UC[a-zA-Z0-9_-]{22}$/.test(input)) {
+				return input;
+			}
+			if (youtubeChannelCache[input]) {
+				return youtubeChannelCache[input];
+			}
 			try {
+				// 1. Try as handle
+				const handle = input.startsWith("@") ? input.substring(1) : input;
+				const handleUrl = `https://www.googleapis.com/youtube/v3/channels?part=id&forHandle=${encodeURIComponent(handle)}&key=${encodeURIComponent(apiKey)}`;
+				const handleRes = await fetch(handleUrl);
+				const handleData = await handleRes.json();
+				if (handleData.items && handleData.items.length) {
+					const id = handleData.items[0].id;
+					youtubeChannelCache[input] = id;
+					return id;
+				}
+
+				// 2. Try as legacy username
+				const userUrl = `https://www.googleapis.com/youtube/v3/channels?part=id&forUsername=${encodeURIComponent(input)}&key=${encodeURIComponent(apiKey)}`;
+				const userRes = await fetch(userUrl);
+				const userData = await userRes.json();
+				if (userData.items && userData.items.length) {
+					const id = userData.items[0].id;
+					youtubeChannelCache[input] = id;
+					return id;
+				}
+			} catch (e) {
+				console.warn("[YouTube] Error resolving channel ID:", e);
+			}
+			return input;
+		}
+
+		async function getYouTube(channelInput) {
+			const apiKey = Widget.cachedPropertyValues.youtubeApiKey;
+			if (!apiKey || !channelInput) return 0;
+			try {
+				const channelId = await resolveYouTubeChannelId(channelInput, apiKey);
+				if (!channelId) return 0;
+
 				const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=id&channelId=${encodeURIComponent(channelId)}&eventType=live&type=video&key=${encodeURIComponent(apiKey)}`;
 				const searchRes = await fetch(searchUrl);
 				const searchData = await searchRes.json();
@@ -242,11 +289,11 @@
 		/* Apply font and icon sizing styles */
 		function applyStyles(state) {
 			if (!state) return;
-			const iconSize = (state.iconSize !== undefined) ? state.iconSize : 32;
-			document.documentElement.style.setProperty('--font-color', state.fontColor);
-			document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
-			document.documentElement.style.setProperty('--font-weight', state.fontWeight);
-			document.documentElement.style.setProperty('--font-family', state.fontFamily);
+			const iconSize = (state.iconSize !== undefined) ? state.iconSize : 50;
+			document.documentElement.style.setProperty('--font-color', state.fontColor ?? '#9146ff');
+			document.documentElement.style.setProperty('--font-size', (state.fontSize ?? 50) + 'px');
+			document.documentElement.style.setProperty('--font-weight', state.fontWeight ?? '600');
+			document.documentElement.style.setProperty('--font-family', state.fontFamily ?? 'Arial');
 			document.documentElement.style.setProperty('--icon-size', iconSize + 'px');
 		}
 
@@ -285,6 +332,14 @@
 			return value;
 		}
 
+		function eventReceived(evt) {
+			const { signal } = evt || {};
+			if (signal === "refreshCount") {
+				console.log("[LiveViewers] refreshCount signal received via eventReceived");
+				updateViewers();
+			}
+		}
+
 		/* -------- Meld Controller Binding -------- */
 		function widgetControllerInit(controller) {
 			Widget.controller = controller;
@@ -301,12 +356,25 @@
 
 			controller.schema = kSchema;
 
+			try {
+				controller.eventReceived.connect(eventReceived);
+			} catch (e) { }
+
 			controller.stateChanged.connect(() => {
 				console.log(`[LiveViewers] stateChanged: ${controller.state} hasSetupState: ${Widget.hasSetupState}`);
 				if (!controller.state || Widget.hasSetupState) return;
 
 				for (const property of kSchema.properties) {
 					setupProperty(property);
+				}
+
+				if (controller.state.refreshCount) {
+					try {
+						controller.state.refreshCount.connect(() => {
+							console.log("[LiveViewers] refreshCount signal received");
+							updateViewers();
+						});
+					} catch (e) { }
 				}
 
 				applyStyles(Widget.cachedPropertyValues);
@@ -340,11 +408,8 @@
 				const value = readPropertyFromUrlOrDefault(propertyData);
 				Widget.cachedPropertyValues[propertyData.name] = value;
 
-				// Don't clobber a URL-provided value with the schema default in Meld
-				const params = new URLSearchParams(window.location.hash.substring(1));
-				if (!params.has(propertyData.name)) {
-					state[propertyData.name] = value;
-				}
+				// Always sync URL value into Meld controller state so inspector controls show it
+				state[propertyData.name] = value;
 
 				try {
 					state[propertyData.name + "Changed"].connect(() => handlePropertyUpdate(propertyData));
@@ -359,6 +424,10 @@
 
 				let newPropertyValue = state[propertyData.name];
 				let defaultValue = propertyData.defaultValue;
+
+				if (newPropertyValue === undefined || newPropertyValue === null) {
+					newPropertyValue = "";
+				}
 
 				if (propertyData.type === "color" && typeof newPropertyValue === "string") {
 					newPropertyValue = newPropertyValue.toLowerCase();
@@ -376,7 +445,11 @@
 				const newUrl = new URL(window.location);
 				const hashSearchParams = new URLSearchParams(newUrl.hash.substring(1));
 
-				if (String(newPropertyValue) === String(defaultValue)) {
+				const isDefault = (propertyData.type === "color")
+					? String(newPropertyValue).toLowerCase() === String(defaultValue).toLowerCase()
+					: String(newPropertyValue) === String(defaultValue);
+
+				if (isDefault) {
 					hashSearchParams.delete(propertyData.name);
 				} else {
 					hashSearchParams.set(propertyData.name, String(newPropertyValue));
@@ -395,7 +468,7 @@
 					}
 				}
 
-				// Visual & timer refresh
+				// Visual & timer refresh immediately
 				if (["fontColor", "fontSize", "fontWeight", "fontFamily", "iconSize"].includes(propertyData.name)) {
 					applyStyles(Widget.cachedPropertyValues);
 					renderIcon(Widget.cachedPropertyValues.platform);
