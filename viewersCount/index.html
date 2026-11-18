@@ -6,23 +6,26 @@
 <!-- Copyright (c) 2025 @PHPkiller				 -->
 <!-- Licensed under the MIT license.			 -->
 <!------------------------------------------------->
-<!-- Version 0.1.26								 -->
+<!-- Version 0.1.41								 -->
 <!------------------------------------------------->
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-	<meta charset="utf-8">
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>LiveViewers Widget v0.1.26</title>
+	<title>LiveViewers Widget v0.1.41</title>
 	<style>
 		:root {
-			--font-color: #ffffff;
+			--font-color: #9146ff;
 			--font-size: 32px;
 			--font-weight: 600;
 			--font-family: "Arial", sans-serif;
 			--icon-size: 32px;
 		}
-		html, body {
+
+		html,
+		body {
 			margin: 0;
 			padding: 0;
 			height: 100%;
@@ -36,6 +39,7 @@
 			font-size: var(--font-size);
 			font-weight: var(--font-weight);
 		}
+
 		#viewerWrap {
 			text-align: center;
 			display: flex;
@@ -43,15 +47,17 @@
 			align-items: center;
 			gap: 6px;
 		}
+
 		#viewerCount {
-			/* text-shadow: 0 0 8px rgba(0,0,0,0.6); */
 			line-height: 1;
 			transition: all 0.25s ease;
 			transition: transform 0.25s ease;
 		}
+
 		#viewerCount.pulse {
 			animation: pulse 0.3s ease-in-out;
 		}
+
 		.icon {
 			width: var(--icon-size);
 			height: var(--icon-size);
@@ -59,48 +65,61 @@
 			align-items: center;
 			justify-content: center;
 			color: var(--font-color);
-			opacity: 0.95;
 		}
+
 		.icon svg {
 			width: 100%;
 			height: 100%;
 			fill: currentColor;
 			stroke: none;
 		}
+
 		.small-note {
 			font-size: 0.6em;
 			opacity: 0.75;
 		}
+
 		@keyframes pulse {
-			0% { transform: scale(1); }
-			50% { transform: scale(1.1); }
-			100% { transform: scale(1); }
+			0% {
+				transform: scale(1);
+			}
+
+			50% {
+				transform: scale(1.1);
+			}
+
+			100% {
+				transform: scale(1);
+			}
 		}
 	</style>
 	<script src="https://widgets.meldstudio.co/v1/qwebchannel-v1.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/countup.js/2.8.2/countUp.umd.js"></script>
 </head>
+
 <body>
 	<div id="viewerWrap">
 		<div id="platformIcon" class="icon" aria-hidden="true"></div>
 		<div id="viewerCount">?</div>
 	</div>
-	<script>
+	<script type="text/javascript">
+		'use strict';
+
 		/* Schema & widget basics */
 		const kSchema = {
 			schemaVersion: 1,
-			name: "LiveViewers (v0.1.26)",
+			name: "LiveViewers (v0.1.41)",
 			author: "PHPkiller [phpkiller.me]",
 			properties: [
 				{ name: "platform", type: "string", defaultValue: "twitch" },
-				{ name: "username", type: "string", defaultValue: "phpkiller" },
+				{ name: "username", type: "string", defaultValue: "chocotaco247" },
 				{ name: "youtubeApiKey", type: "string", defaultValue: "" },
 				{ name: "refreshRate", type: "int", defaultValue: 30 },
 				{ name: "fontFamily", type: "string", defaultValue: "Arial" },
-				{ name: "fontColor", type: "color", defaultValue: "#FFFFFF" },
-				{ name: "fontSize", type: "int", defaultValue: 32 },
+				{ name: "fontColor", type: "color", defaultValue: "#9146ff" },
+				{ name: "fontSize", type: "int", defaultValue: 50 },
 				{ name: "fontWeight", type: "string", defaultValue: "600" },
-				{ name: "iconSize", type: "int", defaultValue: 32 }
+				{ name: "iconSize", type: "int", defaultValue: 50 }
 			],
 			controls: [
 				{ controlType: "Label", text: "Platform Settings:" },
@@ -112,7 +131,7 @@
 				{ controlType: "FontPicker", label: "Font Family", property: "fontFamily", tooltip: "Set the font family of the text." },
 				{ controlType: "ColorTextField", label: "Font Color", property: "fontColor", tooltip: "The color of the text." },
 				{ controlType: "SpinBox", label: "Font Size", property: "fontSize", from: 8, to: 100, tooltip: "The size of the text." },
-				{ controlType: "ComboBox", label: "Font Weight", property: "fontWeight", items: ["300","400","500","600","700","800","900"], tooltip: "The weight of the text." },
+				{ controlType: "ComboBox", label: "Font Weight", property: "fontWeight", items: ["300", "400", "500", "600", "700", "800", "900"], tooltip: "The weight of the text." },
 				{ controlType: "SpinBox", label: "Icon Size (px)", property: "iconSize", from: 8, to: 100, tooltip: "The size of the icon." },
 				{ controlType: "Separator" },
 				{ controlType: "Label", text: "Viewers Refresh Settings:" },
@@ -125,15 +144,16 @@
 			socket: null,
 			channel: null,
 			controller: null,
+			hasSetupState: false,
 			cachedPropertyValues: {},
-			refreshRate: null,
 			refreshTimer: null,
-			iconCache: {}
+			reconnectTimeout: null
 		};
 
 		const viewerWrapEl = document.getElementById('viewerWrap');
 		const viewerCountEl = document.getElementById('viewerCount');
 		const platformIconEl = document.getElementById('platformIcon');
+
 		const platformIcons = {
 			twitch: `<svg xml:space="preserve" viewBox="0 0 2400 2800"><path fill="#fff" d="m2200 1300-400 400h-400l-350 350v-350H600V200h1600z"/><g fill="#9146ff"><path d="M500 0 0 500v1800h600v500l500-500h400l900-900V0H500zm1700 1300-400 400h-400l-350 350v-350H600V200h1600v1100z"/><path d="M1700 550h200v600h-200zm-550 0h200v600h-200z"/></g></svg>`,
 			youtube: `<svg preserveAspectRatio="xMidYMid" viewBox="0 0 256 180"><path fill="red" d="M250.346 28.075A32.18 32.18 0 0 0 227.69 5.418C207.824 0 127.87 0 127.87 0S47.912.164 28.046 5.582A32.18 32.18 0 0 0 5.39 28.24c-6.009 35.298-8.34 89.084.165 122.97a32.18 32.18 0 0 0 22.656 22.657c19.866 5.418 99.822 5.418 99.822 5.418s79.955 0 99.82-5.418a32.18 32.18 0 0 0 22.657-22.657c6.338-35.348 8.291-89.1-.164-123.134Z"/><path fill="#FFF" d="m102.421 128.06 66.328-38.418-66.328-38.418z"/></svg>`,
@@ -154,7 +174,7 @@
 			try {
 				const res = await fetch(`https://decapi.me/twitch/viewercount/${encodeURIComponent(user)}`);
 				const text = await res.text();
-				return text.includes("offline") ? 0 : parseInt(text) || 0;
+				return text.includes("offline") ? 0 : parseInt(text, 10) || 0;
 			} catch (e) { return 0; }
 		}
 
@@ -162,7 +182,6 @@
 			try {
 				const res = await fetch(`https://kick.com/api/v2/channels/${encodeURIComponent(user)}`);
 				const data = await res.json();
-				// Kick field variance: some endpoints use livestream.viewer_count or livestream.viewers
 				return data?.livestream?.viewer_count ?? data?.livestream?.viewers ?? 0;
 			} catch (e) { return 0; }
 		}
@@ -170,15 +189,7 @@
 		async function getYouTube(channelId) {
 			const apiKey = Widget.cachedPropertyValues.youtubeApiKey;
 			if (!apiKey || !channelId) return 0;
-			// ─── SWITCH MODE ───────────────────────────────────────────────
-			// "A" → first live only (default)
-			// "B" → pick a specific index (manual)
-			// "C" → aggregate all concurrent viewers across all live streams
-			const mode = "A"; // change to "B" or "C" to switch logic
-			const indexToPick = 0; // used only for mode "B"
-			// ──────────────────────────────────────────────────────────────
 			try {
-				// Step 1: find currently live videos for the given channel
 				const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=id&channelId=${encodeURIComponent(channelId)}&eventType=live&type=video&key=${encodeURIComponent(apiKey)}`;
 				const searchRes = await fetch(searchUrl);
 				const searchData = await searchRes.json();
@@ -186,98 +197,28 @@
 					console.warn("[YouTube] No live streams currently running.");
 					return 0;
 				}
-				// Handle mode logic
-				switch (mode) {
-					// Option A: Use first live video only
-					case "A": {
-						const liveVideoId = searchData.items[0].id.videoId;
-						if (!liveVideoId) return 0;
-						const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${liveVideoId}&key=${encodeURIComponent(apiKey)}`;
-						const statsRes = await fetch(statsUrl);
-						const statsData = await statsRes.json();
-						const viewers = parseInt(statsData?.items?.[0]?.liveStreamingDetails?.concurrentViewers ?? "0", 10);
-						return viewers || 0;
-					}
-					// Option B: Use a specific live stream index
-					case "B": {
-						const videoId = searchData.items[indexToPick]?.id?.videoId;
-						if (!videoId) {
-							console.warn(`[YouTube] No live video at index ${indexToPick}.`);
-							return 0;
-						}
-						const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${videoId}&key=${encodeURIComponent(apiKey)}`;
-						const statsRes = await fetch(statsUrl);
-						const statsData = await statsRes.json();
-						const viewers = parseInt(statsData?.items?.[0]?.liveStreamingDetails?.concurrentViewers ?? "0", 10);
-						return viewers || 0;
-					}
-					// Option C: Aggregate all concurrent viewers
-					case "C": {
-						let total = 0;
-						// Collect all video IDs
-						const ids = searchData.items
-							.map(item => item.id?.videoId)
-							.filter(Boolean);
-						if (!ids.length) return 0;
-						// Batch requests in chunks of 50 (YouTube API limit)
-						for (let i = 0; i < ids.length; i += 50) {
-							const batch = ids.slice(i, i + 50).join(",");
-							const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${batch}&key=${encodeURIComponent(apiKey)}`;
-							const statsRes = await fetch(statsUrl);
-							const statsData = await statsRes.json();
-							for (const item of statsData.items || []) {
-								const v = parseInt(item?.liveStreamingDetails?.concurrentViewers ?? "0", 10);
-								if (!isNaN(v)) total += v;
-							}
-						}
-						console.log(`[YouTube] Aggregated total viewers across ${searchData.items.length} live streams: ${total}`);
-						return total;
-					}
-					default:
-						console.warn(`[YouTube] Invalid mode "${mode}". Defaulting to first live.`);
-						return 0;
-				}
+				const liveVideoId = searchData.items[0].id.videoId;
+				if (!liveVideoId) return 0;
+				const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${liveVideoId}&key=${encodeURIComponent(apiKey)}`;
+				const statsRes = await fetch(statsUrl);
+				const statsData = await statsRes.json();
+				const viewers = parseInt(statsData?.items?.[0]?.liveStreamingDetails?.concurrentViewers ?? "0", 10);
+				return viewers || 0;
 			} catch (err) {
 				console.error("[YouTube] API error:", err);
 				return 0;
 			}
 		}
 
-		/* Insert or update icon element — inline SVG using original colors */
-		function renderIcon(svgText, iconSizePx, color) {
-			platformIconEl.innerHTML = ''; // clear
-			platformIconEl.style.setProperty('--icon-size', iconSizePx + 'px');
-			if (!svgText) {
-				const note = document.createElement('div');
-				note.className = 'small-note';
-				note.textContent = Widget.cachedPropertyValues.platform?.toUpperCase() ?? '';
-				platformIconEl.appendChild(note);
-				return;
-			}
-			let safeSvg = svgText.replace(/<svg([^>]+)>/i, `<svg$1 role="img" aria-hidden="true">`);
-			const wrapper = document.createElement('div');
-			wrapper.innerHTML = safeSvg;
-			const svgEl = wrapper.querySelector('svg');
-			if (svgEl) {
-				svgEl.setAttribute('width', iconSizePx);
-				svgEl.setAttribute('height', iconSizePx);
-				svgEl.style.display = 'block';
-				platformIconEl.appendChild(svgEl);
-				return;
-			}
-			// fallback if parse fails
-			platformIconEl.innerHTML = safeSvg;
-		}
-
 		/* -------- Display logic & update hooks -------- */
 		const CountUp = window.countUp.CountUp;
 		let countUp = null;
+		let currentValue = 0;
 
 		async function updateViewers() {
 			const { platform = 'twitch', username = '' } = Widget.cachedPropertyValues;
 			const count = await fetchViewers(platform, username);
-			const newValue = parseInt(count) || 0;
-			// Initialize CountUp once
+			const newValue = parseInt(count, 10) || 0;
 			if (!countUp) {
 				countUp = new CountUp(viewerCountEl, newValue, {
 					startVal: 0,
@@ -290,7 +231,6 @@
 				currentValue = newValue;
 				return;
 			}
-			// Animate only if value changed
 			if (newValue !== currentValue) {
 				countUp.update(newValue);
 				currentValue = newValue;
@@ -299,219 +239,228 @@
 			}
 		}
 
-
-
 		/* Apply font and icon sizing styles */
 		function applyStyles(state) {
 			if (!state) return;
+			const iconSize = (state.iconSize !== undefined) ? state.iconSize : 32;
 			document.documentElement.style.setProperty('--font-color', state.fontColor);
 			document.documentElement.style.setProperty('--font-size', state.fontSize + 'px');
 			document.documentElement.style.setProperty('--font-weight', state.fontWeight);
 			document.documentElement.style.setProperty('--font-family', state.fontFamily);
-			const iconSize = (state.iconSize !== undefined) ? state.iconSize : 32;
 			document.documentElement.style.setProperty('--icon-size', iconSize + 'px');
-			// Also update icon color/size on the DOM node
-			platformIconEl.style.color = state.fontColor;
-			platformIconEl.style.width = iconSize + 'px';
-			platformIconEl.style.height = iconSize + 'px';
 		}
 
-		/* Called when platform changes so we also load the icon */
-		async function updateIconForPlatform(platform) {
-			const p = platform ?? Widget.cachedPropertyValues.platform;
-			const iconSize = Widget.cachedPropertyValues.iconSize ?? 32;
-			const color = Widget.cachedPropertyValues.fontColor ?? getComputedStyle(document.documentElement).getPropertyValue('--font-color');
-
-			const svg = platformIcons[p] ?? null;
-			renderIcon(svg, iconSize, color);
+		/* Insert or update icon element — inline SVG using original colors */
+		function renderIcon(platform) {
+			platformIconEl.innerHTML = '';
+			platformIconEl.innerHTML = platformIcons[platform] || platformIcons["twitch"];
 		}
 
-		/* -------- Initialization & URL sync -------- */
-		function setupWidget(state = {}) {
-			applyStyles(state);
-			updateViewers();
-			updateIconForPlatform(state.platform);
-			if (Widget.refreshTimer) clearInterval(Widget.refreshTimer);
-			Widget.refreshRate = state.refreshRate ?? 30;
-			Widget.refreshTimer = setInterval(updateViewers, Widget.refreshRate * 1000);
-		}
-
-		/* Called on property changes from Meld */
-		function handlePropertyUpdate(propertyData) {
-			const state = Widget.controller?.state;
-			if (!state) return;
-			// read new value from controller.state
-			let newPropertyValue = state[propertyData.name];
-			let defaultValue = propertyData.defaultValue;
-			// normalize color casing
-			if (propertyData.type === "color" && typeof newPropertyValue === "string") {
-				newPropertyValue = newPropertyValue.toLowerCase();
-				defaultValue = defaultValue.toLowerCase();
-			}
-			// decode if the controller gives encoded value
-			if (typeof newPropertyValue === "string") {
-				try { newPropertyValue = decodeURIComponent(newPropertyValue); } catch (e) { /* ignore */ }
-			}
-			Widget.cachedPropertyValues[propertyData.name] = newPropertyValue;
-			// visual updates
-			if (["fontColor","fontSize","fontWeight","fontFamily","iconSize"].includes(propertyData.name)) {
-				applyStyles(Widget.cachedPropertyValues);
-				updateIconForPlatform(Widget.cachedPropertyValues.platform);
-			}
-			// update icon and viewer fetch immediately
-			if (["platform"].includes(propertyData.name)) {
-				updateIconForPlatform(newPropertyValue);
-				updateViewers();
-			}
-			if (["username"].includes(propertyData.name)) {
-				updateViewers();
-			}
-			// update refresh interval
-			if (["refreshRate"].includes(propertyData.name)) {
-				if (Widget.refreshTimer) clearInterval(Widget.refreshTimer);
-				Widget.refreshRate = Widget.cachedPropertyValues.refreshRate ?? 30;
-				Widget.refreshTimer = setInterval(updateViewers, Widget.refreshRate * 1000);
-				console.log(`[LiveViewers] Refresh interval set to ${Widget.refreshRate}s`);
-			}
-			// === URL persistence ===
-			try {
-				const url = new URL(window.location.href);
-				const params = url.searchParams;
-				const hashParams = new URLSearchParams(window.location.hash.slice(1));
-				// Rebuild params for all non-default values
-				for (const prop of kSchema.properties) {
-					const val = Widget.cachedPropertyValues[prop.name];
-					const def = prop.defaultValue;
-					if (val === def || val === undefined || val === null || val === "") {
-						params.delete(prop.name);
-						hashParams.delete(prop.name);
-					} else {
-						params.set(prop.name, String(val));
-						hashParams.set(prop.name, String(val));
+		/* ---------- URL Hash Management & Property Handling ---------- */
+		function readPropertyFromUrlOrDefault(propertyData) {
+			const hash = window.location.hash.substring(1);
+			const params = new URLSearchParams(hash);
+			let value = propertyData.defaultValue;
+			if (params.has(propertyData.name)) {
+				let raw = params.get(propertyData.name);
+				try { raw = decodeURIComponent(raw); } catch (e) { }
+				switch (propertyData.type) {
+					case "int": {
+						const n = parseInt(raw, 10);
+						return isNaN(n) ? propertyData.defaultValue : n;
 					}
-				}
-				url.search = params.toString();
-				const newUrlStr = url.toString();
-				const newHash = "#" + hashParams.toString();
-				let updated = false;
-				try {
-					window.history.replaceState({}, "", newUrlStr);
-					updated = true;
-				} catch (e) {
-					console.warn("[LiveViewers] replaceState blocked:", e);
-				}
-				// If sandbox prevents replaceState, fallback to updating hash
-				if (!updated) {
-					window.location.hash = newHash;
-				}
-				// Notify Meld Studio to keep control
-				try {
-					if (controller && typeof controller.updateUrl === "function") {
-						controller.updateUrl(updated ? newUrlStr : newHash, false);
+					case "real": {
+						const f = parseFloat(raw);
+						return isNaN(f) ? propertyData.defaultValue : f;
 					}
-				} catch (e) {
-					console.warn("[LiveViewers] controller.updateUrl failed:", e);
+					case "bool":
+						return String(raw).toLowerCase() === "true";
+					case "color":
+						return String(raw).toLowerCase();
+					case "string":
+					default:
+						return raw;
 				}
-				console.log("[LiveViewers] URL updated:", updated ? newUrlStr : newHash);
-			} catch (err) {
-				console.error("[LiveViewers] Failed to persist URL:", err);
 			}
+			return value;
 		}
 
 		/* -------- Meld Controller Binding -------- */
 		function widgetControllerInit(controller) {
 			Widget.controller = controller;
 			controller.connectedClientId = Widget.id;
+
+			controller.connectedClientIdChanged = (() => {
+				const socket = Widget.socket;
+				const newConnectedClientId = Widget.controller.connectedClientId;
+				if (socket && Widget.id !== newConnectedClientId) {
+					console.log(`[LiveViewers] Closing widget client (${Widget.id}) socket, another client connected (${newConnectedClientId})`);
+					Widget.socket.close(1000, "Another client connected.");
+				}
+			});
+
 			controller.schema = kSchema;
+
 			controller.stateChanged.connect(() => {
-				if (!controller.state) return;
-				for (let property of kSchema.properties) setupProperty(property);
-				setupWidget(controller.state);
+				console.log(`[LiveViewers] stateChanged: ${controller.state} hasSetupState: ${Widget.hasSetupState}`);
+				if (!controller.state || Widget.hasSetupState) return;
+
+				for (const property of kSchema.properties) {
+					setupProperty(property);
+				}
+
+				applyStyles(Widget.cachedPropertyValues);
+				renderIcon(Widget.cachedPropertyValues.platform);
+				if (Widget.refreshTimer) clearInterval(Widget.refreshTimer);
+				const rate = parseInt(Widget.cachedPropertyValues.refreshRate, 10);
+				Widget.refreshTimer = setInterval(updateViewers, (isNaN(rate) ? 30 : rate) * 1000);
+
 				Widget.hasSetupState = true;
 			});
+
 			controller.resetProperty.connect((propertyName) => {
 				if (!Widget.hasSetupState) return;
-				for (let property of kSchema.properties) {
-					if (property.name === propertyName) {
-						controller.state[property.name] = property.defaultValue;
-						// sync URL
-						handlePropertyUpdate(property);
-						return;
-					}
+				const prop = kSchema.properties.find(p => p.name === propertyName);
+				if (prop) {
+					controller.state[prop.name] = prop.defaultValue;
 				}
-				console.warn(`[Slideshow] Unable to reset property "${propertyName}"`);
 			});
+
 			controller.resetAllProperties.connect(() => {
 				if (!Widget.hasSetupState) return;
-				for (let property of kSchema.properties) {
-					controller.state[property.name] = property.defaultValue;
+				for (const prop of kSchema.properties) {
+					controller.state[prop.name] = prop.defaultValue;
 				}
-				// After all resets, update URL cleanup once
-				for (let property of kSchema.properties) handlePropertyUpdate(property);
 			});
-		}
 
-		function setupProperty(propertyData) {
-			const state = Widget.controller?.state;
-			if (!state) return;
-			// Combine both query params and hash params
-			const queryParams = new URLSearchParams(window.location.search);
-			const hashParams = new URLSearchParams(window.location.hash.substring(1));
-			// Priority: hash > query > default
-			let value = hashParams.get(propertyData.name)
-				?? queryParams.get(propertyData.name)
-				?? propertyData.defaultValue;
-			// Decode and normalize
-			try { value = decodeURIComponent(value); } catch {}
-			switch (propertyData.type) {
-				case "int":
-					value = parseInt(value, 10);
-					if (isNaN(value)) value = propertyData.defaultValue;
-					break;
-				case "real":
-					value = parseFloat(value);
-					if (isNaN(value)) value = propertyData.defaultValue;
-					break;
-				case "bool":
-					value = (String(value).toLowerCase() === "true");
-					break;
-				case "color":
-					value = String(value).toLowerCase();
-					break;
-				case "string":
-				default:
-					value = String(value);
-					break;
+			function setupProperty(propertyData) {
+				const state = Widget.controller && Widget.controller.state;
+				if (!state) return;
+
+				const value = readPropertyFromUrlOrDefault(propertyData);
+				Widget.cachedPropertyValues[propertyData.name] = value;
+
+				// Don't clobber a URL-provided value with the schema default in Meld
+				const params = new URLSearchParams(window.location.hash.substring(1));
+				if (!params.has(propertyData.name)) {
+					state[propertyData.name] = value;
+				}
+
+				try {
+					state[propertyData.name + "Changed"].connect(() => handlePropertyUpdate(propertyData));
+				} catch (e) {
+					console.warn(`[LiveViewers] No change signal for "${propertyData.name}"`);
+				}
 			}
-			// Cache and apply
-			Widget.cachedPropertyValues[propertyData.name] = value;
-			state[propertyData.name] = value;
-			// Bind live updates from Meld
-			try {
-				state[propertyData.name + "Changed"].connect(() => handlePropertyUpdate(propertyData));
-			} catch (e) {
-				console.warn(`[LiveViewers] Failed binding property ${propertyData.name}`, e);
+
+			function handlePropertyUpdate(propertyData) {
+				const state = controller && controller.state;
+				if (!state) return;
+
+				let newPropertyValue = state[propertyData.name];
+				let defaultValue = propertyData.defaultValue;
+
+				if (propertyData.type === "color" && typeof newPropertyValue === "string") {
+					newPropertyValue = newPropertyValue.toLowerCase();
+					defaultValue = String(defaultValue).toLowerCase();
+				}
+				if (typeof newPropertyValue === "string") {
+					try { newPropertyValue = decodeURIComponent(newPropertyValue); } catch (e) { }
+				}
+
+				Widget.cachedPropertyValues[propertyData.name] = newPropertyValue;
+				debugLog("Property updated:", propertyData.name, "=", newPropertyValue);
+
+				// Persist to the URL hash so the value survives reload in MeldStudio
+				const oldUrlStr = window.location.href;
+				const newUrl = new URL(window.location);
+				const hashSearchParams = new URLSearchParams(newUrl.hash.substring(1));
+
+				if (String(newPropertyValue) === String(defaultValue)) {
+					hashSearchParams.delete(propertyData.name);
+				} else {
+					hashSearchParams.set(propertyData.name, String(newPropertyValue));
+				}
+
+				const hashString = hashSearchParams.toString();
+				newUrl.hash = hashString.length ? "#" + hashString : "";
+				const newUrlStr = newUrl.toString();
+
+				if (newUrlStr !== oldUrlStr) {
+					window.history.pushState({}, "", newUrlStr);
+					try {
+						controller.updateUrl(newUrlStr, false);
+					} catch (e) {
+						debugLog("updateUrl failed:", e);
+					}
+				}
+
+				// Visual & timer refresh
+				if (["fontColor", "fontSize", "fontWeight", "fontFamily", "iconSize"].includes(propertyData.name)) {
+					applyStyles(Widget.cachedPropertyValues);
+					renderIcon(Widget.cachedPropertyValues.platform);
+				}
+				if (["platform", "username", "youtubeApiKey"].includes(propertyData.name)) {
+					if (propertyData.name === "platform") renderIcon(newPropertyValue);
+					updateViewers();
+				}
+				if (propertyData.name === "refreshRate") {
+					if (Widget.refreshTimer) clearInterval(Widget.refreshTimer);
+					const rate = parseInt(newPropertyValue, 10);
+					Widget.refreshTimer = setInterval(updateViewers, (isNaN(rate) ? 30 : rate) * 1000);
+				}
 			}
 		}
 
 		/* -------- Socket connection & add-to-Meld helper -------- */
 		function connectSocket() {
+			if (Widget.reconnectTimeout !== null) {
+				clearTimeout(Widget.reconnectTimeout);
+				Widget.reconnectTimeout = null;
+			}
+			function attemptReconnect() {
+				if (Widget.reconnectTimeout !== null) return;
+				Widget.reconnectTimeout = setTimeout(connectSocket, 1000);
+			}
+
 			const params = new URLSearchParams(window.location.search);
 			const address = params.get("address") ?? "127.0.0.1";
 			const port = params.get("port") ?? "55255";
 			const widgetId = params.get("widget_id") ?? Widget.id;
-			const socket = new WebSocket(`ws://${address}:${port}`);
+
+			let socket;
+			try {
+				socket = new WebSocket(`ws://${address}:${port}`);
+			} catch (err) {
+				console.error("[LiveViewers] WebSocket failed:", err);
+				attemptReconnect();
+				return;
+			}
 			Widget.socket = socket;
+
 			socket.onopen = function () {
+				if (Widget.reconnectTimeout !== null) {
+					clearTimeout(Widget.reconnectTimeout);
+					Widget.reconnectTimeout = null;
+				}
 				Widget.channel = new QWebChannel(socket, function (channel) {
-					const obj = channel.objects[widgetId] || channel.objects[Object.keys(channel.objects)[0]];
-					if (obj) widgetControllerInit(obj);
+					const objects = channel.objects || {};
+					const obj = objects[widgetId] || objects[Object.keys(objects)[0]];
+					console.log("[LiveViewers] Widget ID:", widgetId, obj ? "Widget Found" : "Widget Not Found");
+					if (obj) {
+						widgetControllerInit(obj);
+					} else {
+						console.warn("[LiveViewers] Widget object not found in QWebChannel objects.");
+					}
 				});
 			};
 			socket.onclose = () => {
-				console.warn("[LiveViewers] Lost connection. Retrying...");
-				setTimeout(connectSocket, 1000);
+				if (Widget.socket === socket) {
+					console.warn("[LiveViewers] Lost connection. Retrying...");
+					attemptReconnect();
+				}
 			};
+			socket.onerror = (e) => console.error("[LiveViewers] socket error", e);
 		}
 
 		function openInMeldStudio() {
@@ -520,7 +469,7 @@
 				const widgetDict = {
 					width: 400,
 					height: 200,
-					widgetSource: window.location.href,
+					widgetSource: window.location.href.split("#")[0] + window.location.hash,
 					meta: {
 						pluginName: "MeldStudio",
 						pluginPath: "qrc:/Meld/SceneEditor/Plugins/MeldStudio/plugin_MeldStudio.qml",
@@ -536,25 +485,24 @@
 
 		/* -------- Boot -------- */
 		window.onload = () => {
-			const isMeld = window.location.search.includes("address=");
-			if (!isMeld) {
-				viewerWrapEl.innerHTML = `<span style="color:red;">Open in <b>MeldStudio</b></span>`;
-				console.warn("[LiveViewers] Please open inside MeldStudio.");
-			} else {
-				const params = new URLSearchParams(window.location.search);
-				const platform = params.get("platform") || "twitch";
-				// Initialize cached values early
-				Widget.cachedPropertyValues.platform = platform;
-				Widget.cachedPropertyValues.iconSize = 32;
-				Widget.cachedPropertyValues.fontColor = "#ffffff";
-				// Render default icon immediately
-				updateIconForPlatform(platform);
-				// Connect socket
-				connectSocket();
+			for (let property of kSchema.properties) {
+				Widget.cachedPropertyValues[property.name] = readPropertyFromUrlOrDefault(property);
 			}
-			// Add to Meld alert
+			renderIcon(Widget.cachedPropertyValues.platform);
+			viewerCountEl.textContent = '?';
+			applyStyles(Widget.cachedPropertyValues);
+			updateViewers();
+			connectSocket();
 			if (openInMeldStudio()) return;
 		};
+
+		function debugLog(...args) {
+			console.log("[LiveViewers DEBUG]", ...args);
+		}
+		window.addEventListener('hashchange', () => {
+			debugLog("Hash changed externally:", window.location.hash);
+		});
 	</script>
 </body>
+
 </html>
